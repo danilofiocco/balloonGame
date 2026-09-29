@@ -58,6 +58,9 @@
       stateMachines: 'State Machine 1',
       autoplay: true,
       autoBind: true,
+      // Lets the file's url event open the portfolio link on the game-over
+      // screen (in a new tab).
+      automaticallyHandleEvents: true,
       // Portrait 1080x1920 artboard, letterboxed to fit any window.
       layout: new rive.Layout({ fit: rive.Fit.Contain, alignment: rive.Alignment.Center }),
       onLoad: () => {
