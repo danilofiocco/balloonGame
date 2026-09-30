@@ -402,7 +402,17 @@
     };
     ['touchend', 'click', 'keydown'].forEach((t) => document.addEventListener(t, unlockAudio, true));
 
-    window.addEventListener('resize', () => r.resizeDrawingSurfaceToCanvas());
+    // Keep the game's drawing surface (and so its tap positions) matched to the
+    // canvas whenever the canvas changes size. On iPhones the browser's bars can
+    // still be settling after load, resizing the canvas without a window resize
+    // event; missing that squashes the picture and puts taps off target (the
+    // leaderboard button stopped responding).
+    const fitCanvas = () => r.resizeDrawingSurfaceToCanvas();
+    if (window.ResizeObserver) new ResizeObserver(fitCanvas).observe(canvas);
+    window.addEventListener('resize', fitCanvas);
+    window.addEventListener('orientationchange', fitCanvas);
+    if (window.visualViewport) window.visualViewport.addEventListener('resize', fitCanvas);
+    window.addEventListener('pageshow', fitCanvas); // back/forward cache restores
 
     // Diagnostics, shown only with ?debug in the address: the state of the
     // game's audio engine, plus a plain beep to check the phone plays web audio.
