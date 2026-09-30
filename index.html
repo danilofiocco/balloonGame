@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#ffffff">
   <title>Balloon Pop</title>
+  <!-- Fallback for the name box where Arial Rounded MT Bold isn't installed. -->
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@800&display=swap">
   <style>
     :root {
       --bg: #ffffff;
@@ -38,6 +40,116 @@
       font: 16px/1.5 system-ui, sans-serif;
       text-align: center;
     }
+
+    /* Name entry after game over, in the ranking board's look: the wooden
+       board (img/ranking_board.png, 9-sliced so it fits any height) with the
+       star and title on its plank, brown Arial Rounded text on the paper, and
+       the cyan button. Covers the game so taps and keys don't reach it. */
+    @font-face {
+      font-family: 'Supersonic Rocketship';
+      src: url('fonts/supersonic_rocketship.ttf') format('truetype');
+    }
+    #entry {
+      --brown: #5b2e0a;
+      --rounded: 'Arial Rounded MT Bold', 'Arial Rounded MT', 'Nunito', system-ui, sans-serif;
+      position: fixed;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      background: rgba(0, 0, 0, 0.6);
+      touch-action: auto;
+      user-select: auto;
+      -webkit-user-select: auto;
+    }
+    #entry.open { display: flex; }
+    #entry form {
+      position: relative;
+      width: min(100%, 393px);
+      box-sizing: border-box;
+      /* ranking_board.png at 0.42, 9-sliced: the plank and frame at the top,
+         the frame's rounded corners (about 110px in the image) whole in the
+         other corners, the paper stretched in between. */
+      border-style: solid;
+      border-width: 86px 59px 59px;
+      border-image: url('img/ranking_board.png') 205 140 140 fill / 86px 59px 59px stretch;
+      padding: 18px 0 0;
+      color: var(--brown);
+      font-family: var(--rounded);
+      font-weight: bold;
+      text-align: center;
+    }
+    /* Title on the plank, between its screws: white Supersonic in a brown
+       outline, shrunk to fit if it's long (fitTitle). */
+    #entry h2 {
+      position: absolute;
+      top: -44px;
+      left: 45px;
+      right: 45px;
+      margin: 0;
+      transform: translateY(-50%);
+      color: #fff;
+      font: 30px/1 'Supersonic Rocketship', system-ui, sans-serif;
+      text-align: center;
+      text-transform: uppercase;
+      white-space: nowrap;
+      -webkit-text-stroke: 7px #552f0b;
+      paint-order: stroke fill;
+    }
+    #entry .score {
+      margin: 0 0 14px;
+      font-size: 56px;
+      line-height: 1.1;
+    }
+    #entry input {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 10px 14px;
+      border: 3px solid #a6814c;
+      border-radius: 16px;
+      background: #fbefd5;
+      color: var(--brown);
+      font: inherit;
+      font-size: 26px;
+      text-align: center;
+      text-transform: uppercase;
+      outline: none;
+    }
+    /* The hint, smaller so it fits; it clears as soon as the field is tapped. */
+    #entry input::placeholder { color: #a6814c; font-size: 19px; }
+    #entry input:focus::placeholder { color: transparent; }
+    #entry input:focus { border-color: #0360a3; }
+    /* SAVE: ranking_button.png with white Supersonic in a navy outline. */
+    #entry-save {
+      display: block;
+      width: 220px;
+      height: 80px;
+      margin: 16px auto 0;
+      padding: 0 0 8px;
+      border: 0;
+      background: url('img/ranking_button.png') center / 100% 100% no-repeat;
+      color: #fff;
+      font: 36px/1 'Supersonic Rocketship', system-ui, sans-serif;
+      text-transform: uppercase;
+      -webkit-text-stroke: 7px #022f67;
+      paint-order: stroke fill;
+      cursor: pointer;
+      transition: transform 0.08s;
+    }
+    #entry-save:active { transform: scale(0.9); }
+    #entry-save:disabled { opacity: 0.6; }
+    #entry-skip {
+      margin-top: 6px;
+      padding: 6px 12px;
+      border: 0;
+      background: none;
+      color: var(--brown);
+      font: inherit;
+      font-size: 20px;
+      text-transform: uppercase;
+      cursor: pointer;
+    }
   </style>
 </head>
 <body>
@@ -47,12 +159,211 @@
   <canvas id="game" tabindex="0"></canvas>
   <div id="error">The game couldn't load.</div>
 
+  <!-- Shown after a game that scored: saves the score under a name, then
+       opens the game's ranking panel. -->
+  <div id="entry">
+    <form autocomplete="off">
+      <h2 id="entry-title" data-text="newScore">new score!</h2>
+      <div class="score" id="entry-score">0</div>
+      <input id="entry-name" maxlength="9" required data-placeholder="yourName" placeholder="type in your name">
+      <button type="submit" id="entry-save" data-text="save">save</button>
+      <button type="button" id="entry-skip" data-text="skip">skip</button>
+    </form>
+  </div>
+
   <script src="https://cdn.jsdelivr.net/npm/@rive-app/webgl2/rive.js"></script>
   <script>
     const canvas = document.getElementById('game');
+    const RIV_VERSION = '1790778195'; // set by build.sh
+
+    // ---- Leaderboard ------------------------------------------------------
+    // Scores live in a Supabase table once these two are filled in (see
+    // LEADERBOARD.md); until then, in this browser only (localStorage). The
+    // anon key is meant to be public: the table's policies decide what it may do.
+    const LEADERBOARD = {
+      supabaseUrl: '',     // e.g. 'https://abcdefgh.supabase.co'
+      supabaseKey: '',     // the project's anon / publishable key
+    };
+    const LIST_MAX = 100; // scores the ranking lists
+    const NAME_MAX = 9;
+    const SCORE_MAX = 1000000; // matches the table's check
+
+    const online = !!(LEADERBOARD.supabaseUrl && LEADERBOARD.supabaseKey);
+    const LOCAL_KEY = 'balloonGame.scores';
+    const SEED_KEY = 'balloonGame.seed';
+    const MINE_KEY = 'balloonGame.mine'; // id of this player's last saved score
+
+    // The ranking starts out with these (made-up) players. Bumping SEED_VERSION
+    // wipes a browser's saved scores and starts it over from this list.
+    const SEED_VERSION = '2';
+    const SEED = [
+      ['CICRANO', 6000],
+      ['FULANO', 4000],
+      ['ASTOLFO', 2000],
+    ];
+
+    try {
+      if (localStorage.getItem(SEED_KEY) !== SEED_VERSION) {
+        localStorage.setItem(LOCAL_KEY, JSON.stringify(SEED.map(([name, score], i) => ({ id: i + 1, name, score }))));
+        localStorage.setItem(SEED_KEY, SEED_VERSION);
+      }
+    } catch (e) {}
+
+    function readLocal() {
+      try { return JSON.parse(localStorage.getItem(LOCAL_KEY)) || []; } catch (e) { return []; }
+    }
+    function writeLocal(rows) {
+      try { localStorage.setItem(LOCAL_KEY, JSON.stringify(rows)); } catch (e) {}
+    }
+    const byScore = (a, b) => b.score - a.score || a.id - b.id;
+
+    function supabase(path, options = {}) {
+      return fetch(LEADERBOARD.supabaseUrl + '/rest/v1/' + path, {
+        ...options,
+        headers: {
+          apikey: LEADERBOARD.supabaseKey,
+          Authorization: 'Bearer ' + LEADERBOARD.supabaseKey,
+          'Content-Type': 'application/json',
+          ...(options.headers || {}),
+        },
+      }).then((res) => {
+        if (!res.ok) throw new Error('leaderboard ' + res.status);
+        return res.json();
+      });
+    }
+
+    // The best scores, best first: [{ id, name, score }].
+    function fetchTop() {
+      if (!online) return Promise.resolve(readLocal().sort(byScore).slice(0, LIST_MAX));
+      return supabase('scores?select=id,name,score&order=score.desc,id.asc&limit=' + LIST_MAX);
+    }
+
+    // Saves a score; resolves to its id, so its row can be highlighted.
+    function submitScore(name, score) {
+      if (!online) {
+        const rows = readLocal();
+        const id = Date.now();
+        rows.push({ id, name, score });
+        writeLocal(rows.sort(byScore).slice(0, LIST_MAX * 2));
+        return Promise.resolve(id);
+      }
+      return supabase('scores', {
+        method: 'POST',
+        headers: { Prefer: 'return=representation' },
+        body: JSON.stringify({ name, score }),
+      }).then((rows) => rows[0].id);
+    }
+
+    // The page's words, in the game's language.
+    const pt = (navigator.language || '').toLowerCase().startsWith('pt');
+    const WORDS = pt
+      ? { newScore: 'nova pontuação!', yourName: 'digite seu nome', save: 'salvar', skip: 'pular',
+          loading: 'carregando...', offline: 'ranking indisponível' }
+      : { newScore: 'new score!', yourName: 'type in your name', save: 'save', skip: 'skip',
+          loading: 'loading...', offline: 'ranking unavailable' };
+    document.querySelectorAll('[data-text]').forEach((el) => { el.textContent = WORDS[el.dataset.text]; });
+    document.querySelectorAll('[data-placeholder]').forEach((el) => { el.placeholder = WORDS[el.dataset.placeholder]; });
+
+    function setupLeaderboard(vm) {
+      const status = vm.string('rankingStatus');
+      const highlight = vm.number('rankHighlight');
+      const openRanking = vm.trigger('openRanking');
+
+      // This player's own entry (their last saved score): highlighted in the
+      // list, which opens scrolled to it.
+      let mine = null;
+      try { mine = JSON.parse(localStorage.getItem(MINE_KEY)); } catch (e) {}
+
+      // Fills the game's ranking list, one "NAME<tab>SCORE" line per score.
+      function show(rows) {
+        vm.string('rankingData').value = rows
+          .map((row) => String(row.name).replace(/[\t\n]/g, ' ').toUpperCase() + '\t' + row.score)
+          .join('\n');
+        const at = rows.findIndex((row) => row.id === mine);
+        highlight.value = at >= 0 ? at + 1 : 0;
+        status.value = '';
+      }
+      // The mouse wheel scrolls the ranking (the game can't see wheel events):
+      // passed on in artboard pixels.
+      const wheel = vm.number('rankingWheel');
+      canvas.addEventListener('wheel', (e) => {
+        const perPixel = Math.max(1080 / canvas.clientWidth, 1920 / canvas.clientHeight);
+        const lines = e.deltaMode === 1 ? 40 : e.deltaMode === 2 ? canvas.clientHeight : 1;
+        wheel.value += e.deltaY * lines * perPixel;
+        e.preventDefault();
+      }, { passive: false });
+
+      let loaded = false;
+      function refresh() {
+        if (!loaded) status.value = WORDS.loading;
+        return fetchTop()
+          .then((rows) => { loaded = true; show(rows); })
+          .catch((e) => { console.error(e); if (!loaded) status.value = WORDS.offline; });
+      }
+      refresh();
+
+      // Name entry, after a game that scored.
+      const entry = document.getElementById('entry');
+      const form = entry.querySelector('form');
+      const input = document.getElementById('entry-name');
+      const save = document.getElementById('entry-save');
+      let pending = 0;
+
+      // Shrinks the plank's title until it fits between the screws.
+      const title = document.getElementById('entry-title');
+      function fitTitle() {
+        let size = 30;
+        title.style.fontSize = size + 'px';
+        while (title.scrollWidth > title.clientWidth && size > 14) {
+          size -= 1;
+          title.style.fontSize = size + 'px';
+        }
+      }
+      document.fonts.ready.then(() => { if (entry.classList.contains('open')) fitTitle(); });
+
+      function close() {
+        entry.classList.remove('open');
+        canvas.focus();
+      }
+      // Keys typed into the box stay out of the game (R would restart it).
+      entry.addEventListener('keydown', (e) => e.stopPropagation());
+      document.getElementById('entry-skip').addEventListener('click', () => {
+        close();
+        refresh();
+      });
+      form.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const name = input.value.trim().slice(0, NAME_MAX);
+        if (!name) return;
+        save.disabled = true;
+        submitScore(name, pending)
+          .then((id) => {
+            mine = id;
+            try { localStorage.setItem(MINE_KEY, JSON.stringify(id)); } catch (err) {}
+            return refresh();
+          })
+          .then(() => { close(); openRanking.trigger(); })
+          .catch((err) => { console.error(err); close(); })
+          .finally(() => { save.disabled = false; });
+      });
+
+      vm.trigger('gameEnded').on(() => {
+        const score = Math.round(vm.number('finalScore').value);
+        if (score <= 0 || score > SCORE_MAX) return;
+        pending = score;
+        document.getElementById('entry-score').textContent = score;
+        input.value = '';
+        // At once, over the game-over screen springing in, so a tap can't
+        // start a new game before the score is saved or skipped.
+        entry.classList.add('open');
+        fitTitle();
+      });
+    }
 
     const r = new rive.Rive({
-      src: 'balloonGame.riv',
+      // build.sh stamps a new version on every build, so browsers fetch the
+      // new file instead of a cached one.
+      src: 'balloonGame.riv?v=' + RIV_VERSION,
       canvas,
       artboard: 'Artboard',
       stateMachines: 'State Machine 1',
@@ -69,6 +380,7 @@
         const vm = r.viewModelInstance;
         const locale = vm && vm.string('locale');
         if (locale) locale.value = navigator.language || 'en';
+        if (vm) setupLeaderboard(vm);
         canvas.focus();
       },
       onLoadError: (e) => {
