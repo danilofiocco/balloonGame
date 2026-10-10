@@ -9,7 +9,7 @@
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@800&display=swap">
   <style>
     :root {
-      --bg: #ffffff;
+      --bg: #0e6779; /* the artboard's colour, behind it while it loads */
     }
     html, body {
       margin: 0;
@@ -176,7 +176,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@rive-app/webgl2@2.43.1/rive.js"></script>
   <script>
     const canvas = document.getElementById('game');
-    const RIV_VERSION = '1791634494'; // set by build.sh
+    const RIV_VERSION = '1791635240'; // set by build.sh
 
     // ---- Leaderboard ------------------------------------------------------
     // Scores live in a Supabase table once these two are filled in (see
@@ -272,7 +272,7 @@
     // boss (one per boss defeated) and end (game over, or the player quit or
     // left; a later one for the same session replaces it). Not from localhost
     // (add ?track to a local URL to send anyway).
-    const VERSION = '2.4.0';
+    const VERSION = '2.4.1';
     const EVENTS = 'balloon2_events';
     const tracking = online && (!/^(localhost|127\.0\.0\.1|)$/.test(location.hostname) || /[?&]track\b/.test(location.search));
 
@@ -429,6 +429,30 @@
       });
     }
 
+    // The game is a 1080x2100 design. Rather than letterbox it, the artboard is
+    // laid out at the screen's own shape: the design scaled to fit, plus the
+    // spare room above/below (or beside). The game centres the design in it,
+    // fills the room with the background, and moves the HUD and bottom buttons
+    // out to the edges, clear of the notch and home indicator (safeTop and
+    // safeBottom, in artboard units).
+    const unitScale = () => Math.min(canvas.clientWidth / 1080, canvas.clientHeight / 2100) || 1;
+    function makeLayout() {
+      return new rive.Layout({ fit: rive.Fit.Layout, layoutScaleFactor: unitScale(), alignment: rive.Alignment.Center });
+    }
+    const safeProbe = document.createElement('div');
+    safeProbe.style.cssText = 'position:fixed;left:0;top:0;width:0;height:0;visibility:hidden;pointer-events:none;' +
+      'padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom)';
+    document.body.appendChild(safeProbe);
+    function pushSafeArea() {
+      const vm = r.viewModelInstance;
+      if (!vm) return;
+      const cs = getComputedStyle(safeProbe);
+      const s = unitScale();
+      const top = vm.number('safeTop'), bottom = vm.number('safeBottom');
+      if (top) top.value = (parseFloat(cs.paddingTop) || 0) / s;
+      if (bottom) bottom.value = (parseFloat(cs.paddingBottom) || 0) / s;
+    }
+
     const r = new rive.Rive({
       // build.sh stamps a new version on every build, so browsers fetch the
       // new file instead of a cached one.
@@ -441,14 +465,14 @@
       // Lets the file's url event open the portfolio link on the game-over
       // screen (in a new tab).
       automaticallyHandleEvents: true,
-      // Portrait 1080x2100 artboard, letterboxed to fit any window.
-      layout: new rive.Layout({ fit: rive.Fit.Contain, alignment: rive.Alignment.Center }),
+      // The artboard takes the screen's shape (see fitLayout).
+      layout: makeLayout(),
       onLoad: () => {
         // No text session from the runtime (2.44+): its hidden text field gets focused on every
         // tap (the game script listens for keys), which pops up the iPad/phone keyboard. This page
         // has its own field for names.
         r.wantsTextInputSession = () => false;
-        r.resizeDrawingSurfaceToCanvas();
+        fitCanvas();
         const vm = r.viewModelInstance;
         if (vm) setupLeaderboard(vm);
         if (vm) setupTelemetry(vm);
@@ -479,7 +503,11 @@
     // still be settling after load, resizing the canvas without a window resize
     // event; missing that squashes the picture and puts taps off target (the
     // leaderboard button stopped responding).
-    const fitCanvas = () => r.resizeDrawingSurfaceToCanvas();
+    function fitCanvas() {
+      r.layout = makeLayout();
+      r.resizeDrawingSurfaceToCanvas();
+      pushSafeArea();
+    }
     if (window.ResizeObserver) new ResizeObserver(fitCanvas).observe(canvas);
     window.addEventListener('resize', fitCanvas);
     window.addEventListener('orientationchange', fitCanvas);
