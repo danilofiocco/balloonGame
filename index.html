@@ -173,10 +173,23 @@
 
   <!-- Pinned: an unpinned URL picks up new runtimes untested (2.44.0 raised the iPad keyboard
        on every tap). -->
+  <script>
+    // Every audio context made on this page (the Rive runtime's included),
+    // so they can be started again after iOS stops them: a full-screen ad in
+    // the iPhone app takes the audio over and leaves them suspended.
+    window.audioContexts = [];
+    ['AudioContext', 'webkitAudioContext'].forEach((name) => {
+      const Base = window[name];
+      if (!Base) return;
+      window[name] = class extends Base {
+        constructor(...args) { super(...args); window.audioContexts.push(this); }
+      };
+    });
+  </script>
   <script src="https://cdn.jsdelivr.net/npm/@rive-app/webgl2@2.43.1/rive.js"></script>
   <script>
     const canvas = document.getElementById('game');
-    const RIV_VERSION = '1791665262'; // set by build.sh
+    const RIV_VERSION = '1791669065'; // set by build.sh
 
     // ---- Leaderboard ------------------------------------------------------
     // Scores live in a Supabase table once these two are filled in (see
@@ -259,11 +272,27 @@
       }).then((rows) => rows[0].id);
     }
 
-    // The page's words (the game is English only).
-    const WORDS = { newScore: 'new score!', yourName: 'type in your name', save: 'save', skip: 'skip',
-      loading: 'loading...', offline: 'ranking unavailable' };
+    // The page's words in the device's language (the game's own are in
+    // lang.luau: the page passes the language on as systemLanguage).
+    const LANG_WORDS = {
+      en: { newScore: 'new score!', yourName: 'type in your name', save: 'save', skip: 'skip',
+        loading: 'loading...', offline: 'ranking unavailable', error: "The game couldn't load." },
+      pt: { newScore: 'nova pontuação!', yourName: 'digite seu nome', save: 'salvar', skip: 'pular',
+        loading: 'carregando...', offline: 'ranking indisponível', error: 'Não foi possível carregar o jogo.' },
+      es: { newScore: '¡nueva puntuación!', yourName: 'escribe tu nombre', save: 'guardar', skip: 'omitir',
+        loading: 'cargando...', offline: 'clasificación no disponible', error: 'No se pudo cargar el juego.' },
+      fr: { newScore: 'nouveau score !', yourName: 'tape ton nom', save: 'enregistrer', skip: 'passer',
+        loading: 'chargement...', offline: 'classement indisponible', error: "Le jeu n'a pas pu se charger." },
+      de: { newScore: 'neuer rekord!', yourName: 'gib deinen namen ein', save: 'speichern', skip: 'überspringen',
+        loading: 'lädt...', offline: 'bestenliste nicht verfügbar', error: 'Das Spiel konnte nicht geladen werden.' },
+    };
+    const SYSTEM_LANGUAGE = (navigator.languages && navigator.languages[0]) || navigator.language || 'en';
+    const LANG = LANG_WORDS[SYSTEM_LANGUAGE.slice(0, 2).toLowerCase()] ? SYSTEM_LANGUAGE.slice(0, 2).toLowerCase() : 'en';
+    const WORDS = LANG_WORDS[LANG];
+    document.documentElement.lang = LANG;
     document.querySelectorAll('[data-text]').forEach((el) => { el.textContent = WORDS[el.dataset.text]; });
     document.querySelectorAll('[data-placeholder]').forEach((el) => { el.placeholder = WORDS[el.dataset.placeholder]; });
+    document.getElementById('error').textContent = WORDS.error;
 
     // ---- Play statistics ---------------------------------------------------
     // The game keeps its numbers for the game in progress in the "telemetry"
@@ -272,7 +301,7 @@
     // boss (one per boss defeated) and end (game over, or the player quit or
     // left; a later one for the same session replaces it). Not from localhost
     // (add ?track to a local URL to send anyway).
-    const VERSION = '2.5.0';
+    const VERSION = '2.5.1';
     const EVENTS = 'balloon2_events';
     const tracking = online && (!/^(localhost|127\.0\.0\.1|)$/.test(location.hostname) || /[?&]track\b/.test(location.search));
 
@@ -353,9 +382,9 @@
         privacy: (on) => { if (privacyOn) privacyOn.value = on ? 1 : 0; },
         rewarded: () => rewarded && rewarded.trigger(),
         failed: () => failed && failed.trigger(),
-        // The game waits under a full-screen ad.
+        // The game waits under a full-screen ad, and its sound comes back after.
         opened: () => r.pause(),
-        closed: () => r.play(),
+        closed: () => { r.play(); resumeAudio(); },
       };
       if (fake && ready) ready.value = 1;
       if (fake && privacyOn) privacyOn.value = 1;
@@ -522,6 +551,7 @@
         if (vm) setupTelemetry(vm);
         if (vm) setupArrowsSeen(vm);
         if (vm) setupAds(vm);
+        if (vm && vm.string('systemLanguage')) vm.string('systemLanguage').value = SYSTEM_LANGUAGE;
         canvas.focus();
       },
       onLoadError: (e) => {
@@ -537,7 +567,18 @@
     if (navigator.audioSession) navigator.audioSession.type = 'playback';
     const silence = new Audio('data:audio/wav;base64,UklGRmQGAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YUAGAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA');
     silence.loop = true;
+    // Starts any stopped audio context (and the silence) again.
+    function resumeAudio() {
+      window.audioContexts.forEach((ctx) => { if (ctx.state !== 'running' && ctx.state !== 'closed') ctx.resume().catch(() => {}); });
+      if (silence.paused && unlocked) silence.play().catch(() => {});
+    }
+    let unlocked = false;
+    // If one is still stopped, the next tap starts it (taps can always start audio).
+    document.addEventListener('pointerdown', () => {
+      if (window.audioContexts.some((ctx) => ctx.state !== 'running' && ctx.state !== 'closed')) resumeAudio();
+    }, true);
     const unlockAudio = () => {
+      unlocked = true;
       silence.play().catch(() => {});
       ['touchend', 'click', 'keydown'].forEach((t) => document.removeEventListener(t, unlockAudio, true));
     };
