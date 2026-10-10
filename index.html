@@ -176,7 +176,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@rive-app/webgl2@2.43.1/rive.js"></script>
   <script>
     const canvas = document.getElementById('game');
-    const RIV_VERSION = '1791638850'; // set by build.sh
+    const RIV_VERSION = '1791665154'; // set by build.sh
 
     // ---- Leaderboard ------------------------------------------------------
     // Scores live in a Supabase table once these two are filled in (see
@@ -272,7 +272,7 @@
     // boss (one per boss defeated) and end (game over, or the player quit or
     // left; a later one for the same session replaces it). Not from localhost
     // (add ?track to a local URL to send anyway).
-    const VERSION = '2.4.5';
+    const VERSION = '2.5.0';
     const EVENTS = 'balloon2_events';
     const tracking = online && (!/^(localhost|127\.0\.0\.1|)$/.test(location.hostname) || /[?&]track\b/.test(location.search));
 
@@ -331,6 +331,50 @@
       const leave = () => { if (cur && !cur.ended) endWith('left'); };
       addEventListener('pagehide', leave);
       document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') leave(); });
+    }
+
+    // Ads: only the iPhone app (ios/) shows them, through its "ads" message
+    // handler; it answers by calling window.bowBlastAds. The game fires
+    // adInterstitial (PLAY AGAIN) and adRewardedShow (WATCH AD), and gets
+    // adRewarded or adFailed back; adReady says whether a rewarded ad is
+    // loaded. Where the player had to consent to ads (Europe, the UK), the
+    // app sets privacy(true): MENU gets a PRIVACY button (openPrivacy) for
+    // their choices. In a browser there are no ads (WATCH AD stays disabled),
+    // unless the page is opened with ?fakeads, which pretends one was watched
+    // and shows PRIVACY.
+    function setupAds(vm) {
+      const native = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.ads;
+      const fake = !native && new URLSearchParams(location.search).has('fakeads');
+      const ready = vm.number('adReady'), privacyOn = vm.number('privacyOn');
+      const rewarded = vm.trigger('adRewarded'), failed = vm.trigger('adFailed');
+      const send = (msg) => { if (native) native.postMessage(msg); };
+      window.bowBlastAds = {
+        ready: (on) => { if (ready) ready.value = on ? 1 : 0; },
+        privacy: (on) => { if (privacyOn) privacyOn.value = on ? 1 : 0; },
+        rewarded: () => rewarded && rewarded.trigger(),
+        failed: () => failed && failed.trigger(),
+        // The game waits under a full-screen ad.
+        opened: () => r.pause(),
+        closed: () => r.play(),
+      };
+      if (fake && ready) ready.value = 1;
+      if (fake && privacyOn) privacyOn.value = 1;
+      const openPrivacy = vm.trigger('openPrivacy');
+      if (openPrivacy) openPrivacy.on(() => {
+        if (fake) console.log('[ads] privacy');
+        send('privacy');
+      });
+      const interstitial = vm.trigger('adInterstitial'), show = vm.trigger('adRewardedShow');
+      if (!interstitial || !show || !rewarded || !failed) return;
+      interstitial.on(() => {
+        if (fake) console.log('[ads] interstitial');
+        send('interstitial');
+      });
+      show.on(() => {
+        if (fake) { console.log('[ads] rewarded'); setTimeout(() => rewarded.trigger(), 1000); }
+        send('rewarded');
+      });
+      send('ready'); // the app answers with bowBlastAds.ready(...)
     }
 
     function setupLeaderboard(vm) {
@@ -477,6 +521,7 @@
         if (vm) setupLeaderboard(vm);
         if (vm) setupTelemetry(vm);
         if (vm) setupArrowsSeen(vm);
+        if (vm) setupAds(vm);
         canvas.focus();
       },
       onLoadError: (e) => {
