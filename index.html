@@ -189,7 +189,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@rive-app/webgl2@2.43.1/rive.js"></script>
   <script>
     const canvas = document.getElementById('game');
-    const RIV_VERSION = '1791669065'; // set by build.sh
+    const RIV_VERSION = '1791745785'; // set by build.sh
 
     // ---- Leaderboard ------------------------------------------------------
     // Scores live in a Supabase table once these two are filled in (see
@@ -642,6 +642,19 @@
         ].join('\n');
       }, 500);
     }
+    // A tap on a phone comes as touches and then again as mouse events, and the
+    // runtime passes both on, so the game saw every tap twice: the sound button
+    // toggled back, and CLOSE on the ranking reopened it (RANKING sits under it).
+    // Mouse events on the canvas just after a touch are dropped before the
+    // runtime's own listeners (on the canvas) hear them; a real mouse is untouched.
+    let lastTouch = -Infinity;
+    ['touchstart', 'touchmove', 'touchend', 'touchcancel'].forEach((t) =>
+      window.addEventListener(t, () => { lastTouch = performance.now(); }, { capture: true, passive: true }));
+    ['mousedown', 'mouseup', 'mousemove', 'mouseover', 'mouseout'].forEach((t) =>
+      window.addEventListener(t, (e) => {
+        if (e.target === canvas && performance.now() - lastTouch < 1000) e.stopImmediatePropagation();
+      }, true));
+
     // Keys (R, Z, L, S) go to the game while the canvas has focus.
     canvas.addEventListener('pointerdown', () => canvas.focus());
   </script>
