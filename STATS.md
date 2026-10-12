@@ -10,8 +10,10 @@ Each game is a session (a restart starts a new one):
 - `start` when it begins,
 - `boss` for each boss defeated: `{ boss, shots }` (bow shots from its
   appearance to its defeat),
-- `end` with the totals: `{ reason, shots, earned, spent, time, popped, supers, ultras, arrows, cheated, … }`
-  (`popped`, `supers` and `ultras` from v2.2.1: balloons popped, Super and Ultra Combos)
+- `end` with the totals: `{ reason, shots, earned, spent, time, popped, supers, ultras, arrows, perks, cheated, … }`
+  (`popped`, `supers` and `ultras` from v2.2.1: balloons popped, Super and Ultra Combos;
+  from v2.6.0 `earned` is XP (crystals) rather than coins, `spent` is always 0, and
+  `perks` lists the kind of each of the first 5 LEVEL UP! picks: `ammo`, `unlock` or `upgrade`)
   where `reason` is `gameover`, `quit` (restarted first) or `left` (closed or
   hid the page; a later `end` for the same session replaces it).
 

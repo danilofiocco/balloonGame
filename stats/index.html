@@ -52,7 +52,7 @@
     .card .note { color: var(--muted); font-size: 12px; margin-top: 2px; }
     section { margin-top: 16px; }
     h2 { font-size: 24px; margin: 0 0 10px; color: var(--edge); }
-    .row { display: grid; grid-template-columns: 110px 1fr 70px; align-items: center; gap: 10px; margin: 8px 0; }
+    .row { display: grid; grid-template-columns: 150px 1fr 70px; align-items: center; gap: 10px; margin: 8px 0; }
     .row .name { font-weight: 600; }
     .row .val { text-align: right; font-variant-numeric: tabular-nums; }
     .row .bar { height: 14px; background: var(--track); border-radius: 999px; overflow: hidden; }
@@ -71,16 +71,15 @@
       <div class="card"><div class="label">Play sessions</div><div class="big" id="sessions">–</div><div class="note">one per game played</div></div>
       <div class="card"><div class="label">Played until game over</div><div class="big" id="gameover">–</div><div class="note" id="gameover-note"></div></div>
       <div class="card"><div class="label">Average play time per session</div><div class="big" id="time">–</div><div class="note">until game over, or until they left</div></div>
-      <div class="card"><div class="label">Coins earned per shot fired</div><div class="big" id="perShot">–</div><div class="note" id="perShot-note"></div></div>
-      <div class="card"><div class="label">Coins spent on arrows per session</div><div class="big" id="spent">–</div><div class="note">out-of-arrows packs</div></div>
-      <div class="card"><div class="label">Super Combos</div><div class="big" id="supers">–</div><div class="note" id="supers-note"></div></div>
-      <div class="card"><div class="label">Ultra Combos</div><div class="big" id="ultras">–</div><div class="note" id="ultras-note"></div></div>
+      <div class="card"><div class="label">XP earned per shot fired</div><div class="big" id="perShot">–</div><div class="note" id="perShot-note"></div></div>
+      <div class="card"><div class="label">Average Super Combos per session</div><div class="big" id="supers">–</div><div class="note" id="supers-note"></div></div>
+      <div class="card"><div class="label">Average Ultra Combos per session</div><div class="big" id="ultras">–</div><div class="note" id="ultras-note"></div></div>
       <div class="card"><div class="label">Average combo per shot</div><div class="big" id="combo">–</div><div class="note" id="combo-note"></div></div>
     </div>
 
     <section class="card">
-      <h2>Most used arrows</h2>
-      <div id="arrows" class="empty">–</div>
+      <h2>Perks picked at the first 5 level-ups</h2>
+      <div id="perks" class="empty">–</div>
     </section>
 
     <section class="card">
@@ -98,7 +97,13 @@
     const SUPABASE_KEY = 'sb_publishable_KJAWjztbbgQqlC6IYCYS4g_eeuVSd1z'; // publishable: safe to be public
     const TABLE = 'balloon2_events';
     const PAGE = 1000;
-    const ARROWS = { normal: 'Regular', multi: 'Multi', mine: 'Hedgehog', parasite: 'Parasite', fish: 'Fish', lightning: 'Tesla' };
+    const PERKS = { ammo: 'More ammo', unlock: 'Arrow unlock', upgrade: 'Arrow upgrade' };
+    const LEVELS_FROM = '2.6.0'; // XP and perks: games from this version on (before it, "earned" was coins)
+    const newer = (v, than) => {
+      const a = String(v || '0').split('.').map(Number), b = than.split('.').map(Number);
+      for (let i = 0; i < 3; i++) if ((a[i] || 0) !== (b[i] || 0)) return (a[i] || 0) > (b[i] || 0);
+      return true;
+    };
     const BOSSES = { clown: 'Clown', dog: 'Dog', ghost: 'Ghost', numbers: 'Numbers' };
 
     const $ = (id) => document.getElementById(id);
@@ -108,7 +113,7 @@
     async function fetchAll() {
       const rows = [];
       for (let from = 0; ; from += PAGE) {
-        const res = await fetch(`${SUPABASE_URL}/rest/v1/${TABLE}?select=session,kind,data,created_at&order=id.asc`, {
+        const res = await fetch(`${SUPABASE_URL}/rest/v1/${TABLE}?select=session,kind,data,version,created_at&order=id.asc`, {
           headers: { apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY, Range: `${from}-${from + PAGE - 1}` },
         });
         if (!res.ok) throw new Error(res.status === 404 ? 'The balloon2_events table doesn’t exist yet.' : 'Couldn’t load the stats (' + res.status + ').');
@@ -123,7 +128,7 @@
       const sessions = new Map();
       for (const r of rows) {
         let s = sessions.get(r.session);
-        if (!s) sessions.set(r.session, s = { start: false, end: null, bosses: [] });
+        if (!s) sessions.set(r.session, s = { start: false, end: null, bosses: [], version: r.version });
         if (r.kind === 'start') s.start = true;
         else if (r.kind === 'end') s.end = r.data; // ordered by id: the latest wins
         else if (r.kind === 'boss') s.bosses.push(r.data);
@@ -140,9 +145,12 @@
       const sum = (key) => ended.reduce((t, s) => t + (s.end[key] || 0), 0);
       const shots = sum('shots');
       $('time').textContent = ended.length ? time(sum('time') / ended.length) : '–';
-      $('perShot').textContent = shots ? fmt(sum('earned') / shots, 1) : '–';
-      $('perShot-note').textContent = `${fmt(sum('earned'))} coins over ${fmt(shots)} shots`;
-      $('spent').textContent = ended.length ? fmt(sum('spent') / ended.length, 1) : '–';
+      // XP (crystals): only games from v2.6.0 on (before it, "earned" counted coins).
+      const leveled = ended.filter((s) => newer(s.version, LEVELS_FROM));
+      const xp = leveled.reduce((t, s) => t + (s.end.earned || 0), 0);
+      const xpShots = leveled.reduce((t, s) => t + (s.end.shots || 0), 0);
+      $('perShot').textContent = xpShots ? fmt(xp / xpShots, 1) : '–';
+      $('perShot-note').textContent = `${fmt(xp)} XP over ${fmt(xpShots)} shots · since v${LEVELS_FROM}`;
 
       // Combos: only games from v2.2.1 on record them (their "end" has "popped").
       const counted = ended.filter((s) => s.end.popped !== undefined);
@@ -150,23 +158,33 @@
       const since = counted.length ? ` · ${fmt(counted.length)} sessions since v2.2.1` : 'counted from v2.2.1';
       for (const key of ['supers', 'ultras']) {
         const n = csum(key);
-        $(key).textContent = counted.length ? fmt(n) : '–';
-        $(key + '-note').textContent = counted.length ? `${fmt(n / counted.length, 2)} per session${since}` : since;
+        $(key).textContent = counted.length ? fmt(n / counted.length, 2) : '–';
+        $(key + '-note').textContent = counted.length ? `${fmt(n)} in all${since}` : since;
       }
       const cshots = csum('shots');
       $('combo').textContent = cshots ? fmt(csum('popped') / cshots, 2) : '–';
       $('combo-note').textContent = cshots ? `${fmt(csum('popped'))} balloons popped over ${fmt(cshots)} shots` : 'balloons popped per shot fired · ' + since;
 
-      // Arrow kinds, most used first (bow shots).
-      const arrows = {};
-      for (const s of ended) for (const [k, n] of Object.entries(s.end.arrows || {})) arrows[k] = (arrows[k] || 0) + n;
-      const list = Object.entries(arrows).sort((a, b) => b[1] - a[1]);
-      const total = list.reduce((t, [, n]) => t + n, 0);
-      $('arrows').className = list.length ? '' : 'empty';
-      $('arrows').innerHTML = list.length ? list.map(([k, n], i) => `
-        <div class="row"><div class="name">${i + 1}. ${ARROWS[k] || k}</div>
-        <div class="bar"><span style="width:${100 * n / list[0][1]}%"></span></div>
-        <div class="val">${fmt(100 * n / total)}%</div></div>`).join('') : 'No shots yet.';
+      // Perks: at each of the first 5 level-ups, how often each kind was picked
+      // (games from v2.6.0 on that got that far), most picked first.
+      const rowsHtml = [];
+      for (let lv = 0; lv < 5; lv++) {
+        const picks = {};
+        let n = 0;
+        for (const s of leveled) {
+          const k = (s.end.perks || [])[lv];
+          if (k) { picks[k] = (picks[k] || 0) + 1; n++; }
+        }
+        if (!n) continue;
+        const list = Object.keys(PERKS).map((k) => [k, picks[k] || 0]).sort((a, b) => b[1] - a[1]);
+        rowsHtml.push(`<div class="row"><div class="name">Level-up ${lv + 1}</div><div></div><div class="empty">${fmt(n)} ${n === 1 ? 'pick' : 'picks'}</div></div>`
+          + list.map(([k, c], i) => `
+        <div class="row"><div class="name">${i + 1}. ${PERKS[k]}</div>
+        <div class="bar"><span style="width:${100 * c / n}%"></span></div>
+        <div class="val">${fmt(100 * c / n)}%</div></div>`).join(''));
+      }
+      $('perks').className = rowsHtml.length ? '' : 'empty';
+      $('perks').innerHTML = rowsHtml.length ? rowsHtml.join('<div style="height:10px"></div>') : `No level-ups yet (counted from v${LEVELS_FROM}).`;
 
       // Bosses: average bow shots from its appearance to its defeat.
       const bosses = {};
