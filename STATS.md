@@ -13,7 +13,8 @@ Each game is a session (a restart starts a new one):
 - `end` with the totals: `{ reason, shots, earned, spent, time, popped, supers, ultras, arrows, perks, cheated, … }`
   (`popped`, `supers` and `ultras` from v2.2.1: balloons popped, Super and Ultra Combos;
   from v2.6.0 `earned` is XP (crystals) rather than coins, `spent` is always 0, and
-  `perks` lists the kind of each of the first 5 LEVEL UP! picks: `ammo`, `unlock` or `upgrade`)
+  `perks` lists the kind of each of the first 5 LEVEL UP! picks: `ammo`, `unlock` or `upgrade`;
+  from v2.7.2 `pops` gives the balloons popped per arrow kind, its spikes, bolts and split arrows included)
   where `reason` is `gameover`, `quit` (restarted first) or `left` (closed or
   hid the page; a later `end` for the same session replaces it).
 

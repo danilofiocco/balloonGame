@@ -78,6 +78,11 @@
     </div>
 
     <section class="card">
+      <h2>Balloons popped per arrow</h2>
+      <div id="pops" class="empty">–</div>
+    </section>
+
+    <section class="card">
       <h2>Perks picked at the first 5 level-ups</h2>
       <div id="perks" class="empty">–</div>
     </section>
@@ -105,6 +110,8 @@
       return true;
     };
     const BOSSES = { clown: 'Clown', dog: 'Dog', ghost: 'Ghost', numbers: 'Numbers' };
+    const ARROWS = { normal: 'Regular', multi: 'Multi', mine: 'Hedgehog', parasite: 'Parasite', fish: 'Fish',
+      lightning: 'Tesla', laser: 'Laser', chicken: 'Chicken' };
 
     const $ = (id) => document.getElementById(id);
     const fmt = (n, d = 0) => Number.isFinite(n) ? n.toLocaleString('en-US', { maximumFractionDigits: d, minimumFractionDigits: d }) : '–';
@@ -164,6 +171,27 @@
       const cshots = csum('shots');
       $('combo').textContent = cshots ? fmt(csum('popped') / cshots, 2) : '–';
       $('combo-note').textContent = cshots ? `${fmt(csum('popped'))} balloons popped over ${fmt(cshots)} shots` : 'balloons popped per shot fired · ' + since;
+
+      // Pops per arrow: balloons each kind popped (its spikes, bolts and split
+      // arrows included) over the arrows of that kind fired; games whose "end"
+      // has "pops" (from v2.7.2).
+      const popped = {}, fired = {};
+      for (const s of ended) {
+        if (!s.end.pops) continue;
+        for (const k of Object.keys(ARROWS)) {
+          popped[k] = (popped[k] || 0) + (s.end.pops[k] || 0);
+          fired[k] = (fired[k] || 0) + ((s.end.arrows || {})[k] || 0);
+        }
+      }
+      const plist = Object.keys(ARROWS).filter((k) => fired[k]).map((k) => [k, popped[k] / fired[k]]).sort((a, b) => b[1] - a[1]);
+      const pmax = Math.max(1, ...plist.map(([, a]) => a));
+      $('pops').className = plist.length ? '' : 'empty';
+      $('pops').innerHTML = plist.length ? plist.map(([k, avg]) => `
+        <div class="row"><div class="name">${ARROWS[k]}</div>
+        <div class="bar"><span style="width:${100 * avg / pmax}%"></span></div>
+        <div class="val">${fmt(avg, 2)}</div></div>
+        <div class="row" style="margin-top:-6px"><div></div><div class="empty">${fmt(popped[k])} popped by ${fmt(fired[k])} ${fired[k] === 1 ? 'arrow' : 'arrows'}</div><div></div></div>`).join('')
+        : 'No arrows counted yet (counted from v2.7.2).';
 
       // Perks: at each of the first 5 level-ups, how often each kind was picked
       // (games from v2.6.0 on that got that far), most picked first.
