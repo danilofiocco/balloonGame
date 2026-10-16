@@ -189,7 +189,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@rive-app/webgl2@2.43.1/rive.js"></script>
   <script>
     const canvas = document.getElementById('game');
-    const RIV_VERSION = '1792160861'; // set by build.sh
+    const RIV_VERSION = '1792175072'; // set by build.sh
 
     // ---- Leaderboard ------------------------------------------------------
     // Scores live in a Supabase table once these two are filled in (see
@@ -301,7 +301,7 @@
     // boss (one per boss defeated) and end (game over, or the player quit or
     // left; a later one for the same session replaces it). Not from localhost
     // (add ?track to a local URL to send anyway).
-    const VERSION = '2.7.5';
+    const VERSION = '2.8.0';
     const EVENTS = 'balloon2_events';
     const tracking = online && (!/^(localhost|127\.0\.0\.1|)$/.test(location.hostname) || /[?&]track\b/.test(location.search));
 
@@ -326,6 +326,15 @@
       const prop = vm.string('arrowsSeen');
       if (!prop) return;
       const KEY = 'balloonGame2.arrowsSeen';
+      try { const saved = localStorage.getItem(KEY); if (saved) prop.value = saved; } catch (e) {}
+      prop.on(() => { try { localStorage.setItem(KEY, prop.value); } catch (e) {} });
+    }
+
+    // The bow skin picked on the main menu: kept in localStorage.
+    function setupBowSkin(vm) {
+      const prop = vm.string('bowSkin');
+      if (!prop) return;
+      const KEY = 'balloonGame2.bowSkin';
       try { const saved = localStorage.getItem(KEY); if (saved) prop.value = saved; } catch (e) {}
       prop.on(() => { try { localStorage.setItem(KEY, prop.value); } catch (e) {} });
     }
@@ -550,6 +559,7 @@
         if (vm) setupLeaderboard(vm);
         if (vm) setupTelemetry(vm);
         if (vm) setupArrowsSeen(vm);
+        if (vm) setupBowSkin(vm);
         if (vm) setupAds(vm);
         if (vm && vm.string('systemLanguage')) vm.string('systemLanguage').value = SYSTEM_LANGUAGE;
         canvas.focus();
